@@ -1,5 +1,5 @@
 import { db } from '../lib/db';
-import type { Task, PendingOperation } from '../lib/db';
+import type { Task, PendingOperation, SyncState } from '../lib/db';
 import { ulid } from 'ulid';
 
 // 生成任务的内容哈希
@@ -48,10 +48,11 @@ function updateVectorClock(currentClock: Record<string, number>): Record<string,
 // 任务服务类
 export class TaskService {
   // 创建任务
-  async createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'vector_clock' | 'checksum' | 'is_deleted'>): Promise<Task> {
+  async createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'vector_clock' | 'checksum' | 'is_deleted'> & { sort_order?: number }): Promise<Task> {
     const now = new Date().toISOString();
     const newTask: Task = {
       ...task,
+      sort_order: task.sort_order ?? 0,
       id: ulid(),
       created_at: now,
       updated_at: now,
@@ -120,6 +121,21 @@ export class TaskService {
     
     return updatedTask;
   }
+
+  // 标记任务已同步（不触发新的同步操作）
+  async markTaskSynced(id: string): Promise<Task | undefined> {
+    const task = await db.tasks.get(id);
+    if (!task) return undefined;
+    
+    const updatedTask: Task = {
+      ...task,
+      sync_status: 'synced'
+    };
+    
+    await db.tasks.put(updatedTask);
+    
+    return updatedTask;
+  }
   
   // 删除任务（软删除）
   async deleteTask(id: string): Promise<boolean> {
@@ -144,8 +160,8 @@ export class TaskService {
   
   // 永久删除任务
   async permanentlyDeleteTask(id: string): Promise<boolean> {
-    const result = await db.tasks.delete(id);
-    return result > 0;
+    await db.tasks.delete(id);
+    return true;
   }
   
   // 恢复已删除任务
@@ -188,10 +204,14 @@ export class TaskService {
   
   // 获取待同步任务
   async getPendingOperations(): Promise<PendingOperation[]> {
-    return db.pending_queue
-      .orderBy('metadata.priority')
-      .reverse()
-      .toArray();
+    const operations = await db.pending_queue.toArray();
+    // 按 priority 降序排序（优先级高的在前），然后按时间戳升序排序（早的在前）
+    return operations.sort((a, b) => {
+      if (b.metadata.priority !== a.metadata.priority) {
+        return b.metadata.priority - a.metadata.priority;
+      }
+      return a.metadata.original_timestamp - b.metadata.original_timestamp;
+    });
   }
   
   // 标记操作为已完成
@@ -207,5 +227,30 @@ export class TaskService {
         'metadata.attempts': operation.metadata.attempts + 1
       });
     }
+  }
+
+  // 根据ID获取待处理操作
+  async getPendingOperationById(operationId: string): Promise<PendingOperation | undefined> {
+    return db.pending_queue.get(operationId);
+  }
+
+  // 获取所有任务（包括已删除的）
+  async getAllTasks(): Promise<Task[]> {
+    return db.tasks.toArray();
+  }
+
+  // 获取用户的同步状态
+  async getSyncStateByUserId(userId: string): Promise<SyncState | undefined> {
+    return db.sync_state.get(userId);
+  }
+
+  // 更新同步状态
+  async updateSyncState(userId: string, updates: Partial<SyncState>): Promise<void> {
+    await db.sync_state.update(userId, updates);
+  }
+
+  // 添加同步状态
+  async addSyncState(state: SyncState): Promise<void> {
+    await db.sync_state.add(state);
   }
 }

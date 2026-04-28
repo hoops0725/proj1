@@ -1,13 +1,13 @@
-import { db } from '../lib/db';
-import type { SyncState } from '../lib/db';
+import type { Task, SyncState } from '../lib/db';
 import { TaskService } from './taskService';
-import { supabase, supabaseService } from './supabaseService';
+import { supabaseService } from './supabaseService';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { supabase } from '../lib/supabase';
 
-// 本地存储服务类
 export class LocalStorageService {
   private taskService: TaskService;
   private isOnline: boolean;
-  private syncInterval: NodeJS.Timeout | null;
+  private syncInterval: ReturnType<typeof setInterval> | null;
   private realtimeSubscription: { unsubscribe: () => void } | null = null;
 
   constructor() {
@@ -15,188 +15,217 @@ export class LocalStorageService {
     this.isOnline = navigator.onLine;
     this.syncInterval = null;
     this.realtimeSubscription = null;
-    
-    // 监听网络状态变化
+
     this.setupNetworkListeners();
-    
-    // 启动同步间隔
     this.startSyncInterval();
-    
-    // 启动实时订阅
-    this.startRealtimeSubscription();
+    this.startRealtimeSubscription().catch(console.error);
   }
-  
-  // 设置网络状态监听器
+
   private setupNetworkListeners() {
-    window.addEventListener('online', () => {
+    window.addEventListener('online', async () => {
       this.isOnline = true;
       console.log('网络已连接，开始同步...');
-      this.syncPendingOperations();
+      const user = await supabaseService.getCurrentUser();
+      if (user?.id) {
+        await this.syncPendingOperations(user.id);
+      }
     });
-    
+
     window.addEventListener('offline', () => {
       this.isOnline = false;
       console.log('网络已断开，切换到离线模式');
     });
   }
-  
-  // 启动同步间隔
+
   private startSyncInterval() {
-    this.syncInterval = setInterval(() => {
+    this.syncInterval = setInterval(async () => {
       if (this.isOnline) {
-        this.syncPendingOperations();
+        const user = await supabaseService.getCurrentUser();
+        if (user?.id) {
+          await this.syncPendingOperations(user.id);
+        }
       }
-    }, 30000); // 每 30 秒同步一次
+    }, 30000);
   }
-  
-  // 停止同步间隔
+
   stopSyncInterval() {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
   }
-  
-  // 获取网络状态
+
   getNetworkStatus(): boolean {
     return this.isOnline;
   }
-  
-  // 任务相关操作
+
   async createTask(taskData: Parameters<TaskService['createTask']>[0]) {
     return this.taskService.createTask(taskData);
   }
-  
+
   async getTasks(userId: string, options?: Parameters<TaskService['getTasks']>[1]) {
     return this.taskService.getTasks(userId, options);
   }
-  
+
   async getTaskById(id: string) {
     return this.taskService.getTaskById(id);
   }
-  
+
   async updateTask(id: string, updates: Parameters<TaskService['updateTask']>[1]) {
     return this.taskService.updateTask(id, updates);
   }
-  
+
   async deleteTask(id: string) {
     return this.taskService.deleteTask(id);
   }
-  
+
   async restoreTask(id: string) {
     return this.taskService.restoreTask(id);
   }
-  
-  // 同步待处理操作
-  async syncPendingOperations() {
+
+  async syncPendingOperations(userId: string) {
     try {
-      // 更新同步状态
-      await this.updateSyncState({ sync_in_progress: true });
-      
+      await this.updateSyncState(userId, { sync_in_progress: true });
+
       const pendingOperations = await this.taskService.getPendingOperations();
-      
+      const adminClient = supabaseAdmin;
+
+      // 日志：检查 supabaseAdmin 是否初始化成功
+      console.log("=== 开始同步待处理操作 ===");
+      console.log(`supabaseAdmin 是否可用: ${adminClient !== null}`);
+      console.log(`待同步操作数量: ${pendingOperations.length}`);
+      console.log(`当前用户ID: ${userId}`);
+
       for (const operation of pendingOperations) {
         try {
-          console.log(`同步操作: ${operation.type} - ${operation.payload.id}`);
-          
-          // 根据操作类型调用相应的 Supabase 服务方法
+          console.log(`\n--- 处理操作: ${operation.type} - ${operation.id} ---`);
+          console.log('操作数据:', JSON.stringify(operation.payload, null, 2));
+
+          const client = adminClient || supabase;
+          console.log(`使用客户端类型: ${adminClient ? 'supabaseAdmin (服务角色)' : 'supabase (普通用户)'}`);
+
           switch (operation.type) {
-            case 'CREATE':
-              await supabaseService.createTask({
-                user_id: operation.payload.user_id,
-                title: operation.payload.title,
-                description: operation.payload.description,
-                priority: operation.payload.priority,
-                status: operation.payload.status,
-                tags: operation.payload.tags,
-                project_id: operation.payload.project_id,
-                parent_id: operation.payload.parent_id,
-                due_date: operation.payload.due_date,
-                due_time: operation.payload.due_time,
-                reminder_at: operation.payload.reminder_at,
-              });
+            case 'CREATE': {
+              console.log('准备创建任务到 Supabase...');
+              const createResult = await client
+                .from('tasks')
+                .insert({
+                  user_id: operation.payload.user_id!,
+                  title: operation.payload.title || '',
+                  description: operation.payload.description,
+                  priority: operation.payload.priority || 3,
+                  status: operation.payload.status || 'todo',
+                  tags: operation.payload.tags || [],
+                  project_id: operation.payload.project_id,
+                  parent_id: operation.payload.parent_id,
+                  sort_order: operation.payload.sort_order ?? 0,
+                  due_date: operation.payload.due_date,
+                  due_time: operation.payload.due_time,
+                  reminder_at: operation.payload.reminder_at,
+                })
+                .select()
+                .single();
+              console.log('创建任务结果:', createResult);
               break;
+            }
             case 'UPDATE':
-              await supabaseService.updateTask(operation.payload.id, {
-                title: operation.payload.title,
-                description: operation.payload.description,
-                priority: operation.payload.priority,
-                status: operation.payload.status,
-                tags: operation.payload.tags,
-                project_id: operation.payload.project_id,
-                parent_id: operation.payload.parent_id,
-                due_date: operation.payload.due_date,
-                due_time: operation.payload.due_time,
-                reminder_at: operation.payload.reminder_at,
-                is_deleted: operation.payload.is_deleted,
-                deleted_at: operation.payload.deleted_at,
-              });
+              if (operation.payload.id) {
+                console.log(`准备更新任务: ${operation.payload.id}`);
+                const updateResult = await client
+                  .from('tasks')
+                  .update({
+                    title: operation.payload.title,
+                    description: operation.payload.description,
+                    priority: operation.payload.priority,
+                    status: operation.payload.status,
+                    tags: operation.payload.tags,
+                    project_id: operation.payload.project_id,
+                    parent_id: operation.payload.parent_id,
+                    sort_order: operation.payload.sort_order,
+                    due_date: operation.payload.due_date,
+                    due_time: operation.payload.due_time,
+                    reminder_at: operation.payload.reminder_at,
+                    is_deleted: operation.payload.is_deleted,
+                    deleted_at: operation.payload.deleted_at,
+                  })
+                  .eq('id', operation.payload.id);
+                console.log('更新任务结果:', JSON.stringify(updateResult, null, 2));
+              }
               break;
             case 'DELETE':
-              await supabaseService.deleteTask(operation.payload.id);
+              if (operation.payload.id) {
+                console.log(`准备删除任务: ${operation.payload.id}`);
+                const deleteResult = await client
+                  .from('tasks')
+                  .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+                  .eq('id', operation.payload.id);
+                console.log('删除任务结果:', JSON.stringify(deleteResult, null, 2));
+              }
               break;
           }
-          
-          // 标记操作为已完成
+
           await this.taskService.markOperationComplete(operation.id);
-          
-          // 更新任务的同步状态
+
           if (operation.payload.id) {
+            // 直接更新任务的同步状态，不触发新的同步操作
             const task = await this.taskService.getTaskById(operation.payload.id);
             if (task) {
-              await this.taskService.updateTask(operation.payload.id, { sync_status: 'synced' });
+              await this.taskService.markTaskSynced(operation.payload.id);
             }
           }
         } catch (error) {
           console.error('同步操作失败:', error);
-          
-          // 增加重试次数
+          console.error('错误详情:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+          console.error('操作类型:', operation.type);
+          console.error('操作ID:', operation.id);
+          console.error('任务ID:', operation.payload.id);
+
+          // 检查是否是请求被中止的错误
+          if (error instanceof Error && error.message.includes('ERR_ABORTED')) {
+            console.error('请求被中止！可能是网络问题或认证过期');
+          }
+
           await this.taskService.incrementOperationAttempts(operation.id);
-          
-          // 检查重试次数，如果超过 5 次，标记为同步失败
-          const updatedOperation = await db.pending_queue.get(operation.id);
+
+          const updatedOperation = await this.taskService.getPendingOperationById(operation.id);
           if (updatedOperation && updatedOperation.metadata.attempts > 5) {
-            // 更新任务的同步状态为失败
             if (operation.payload.id) {
               const task = await this.taskService.getTaskById(operation.payload.id);
               if (task) {
-                await this.taskService.updateTask(operation.payload.id, { sync_status: 'failed' });
+                await this.taskService.updateTask(operation.payload.id, { sync_status: 'conflict' });
               }
             }
-            
-            // 从待同步队列中移除
+
             await this.taskService.markOperationComplete(operation.id);
           }
         }
       }
-      
-      // 更新同步状态
-      await this.updateSyncState({ 
+
+      await this.updateSyncState(userId, {
         sync_in_progress: false,
         last_sync_at: new Date().toISOString(),
-        last_error: null
+        last_error: undefined
       });
-      
+
     } catch (error) {
       console.error('同步过程出错:', error);
-      await this.updateSyncState({ 
+      console.error('错误详情:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      await this.updateSyncState(userId, {
         sync_in_progress: false,
         last_error: error instanceof Error ? error.message : '未知错误'
       });
     }
   }
-  
-  // 更新同步状态
-  private async updateSyncState(updates: Partial<SyncState>) {
-    const userId = supabase.auth.user()?.id;
+
+  private async updateSyncState(userId: string, updates: Partial<SyncState>) {
     if (!userId) return;
-    
-    const existingState = await db.sync_state.get(userId);
-    
+
+    const existingState = await this.taskService.getSyncStateByUserId(userId);
+
     if (existingState) {
-      await db.sync_state.update(userId, updates);
+      await this.taskService.updateSyncState(userId, updates);
     } else {
-      await db.sync_state.add({
+      await this.taskService.addSyncState({
         user_id: userId,
         last_sync_at: new Date().toISOString(),
         sync_in_progress: false,
@@ -204,59 +233,57 @@ export class LocalStorageService {
       });
     }
   }
-  
-  // 获取同步状态
+
   async getSyncState(): Promise<SyncState | undefined> {
-    const userId = supabase.auth.user()?.id;
+    const user = await supabaseService.getCurrentUser();
+    const userId = user?.id;
     if (!userId) return undefined;
-    
-    return db.sync_state.get(userId);
+
+    return this.taskService.getSyncStateByUserId(userId);
   }
-  
-  // 手动触发同步
+
   async triggerSync() {
     if (this.isOnline) {
-      await this.syncPendingOperations();
+      const user = await supabaseService.getCurrentUser();
+      if (user?.id) {
+        await this.syncPendingOperations(user.id);
+      }
     }
   }
-  
-  // 清理过期数据
+
   async cleanupExpiredData() {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    // 清理 30 天前的已删除任务
-    const tasks = await db.tasks.where('is_deleted').equals(true).toArray();
+
+    const tasks = await this.taskService.getAllTasks();
     for (const task of tasks) {
-      if (task.deleted_at && new Date(task.deleted_at) < thirtyDaysAgo) {
+      if (task.is_deleted && task.deleted_at && new Date(task.deleted_at) < thirtyDaysAgo) {
         await this.taskService.permanentlyDeleteTask(task.id);
       }
     }
-    
-    // 清理失败次数过多的操作
-    const operations = await db.pending_queue.where('metadata.attempts').above(5).toArray();
+
+    const operations = await this.taskService.getPendingOperations();
     for (const operation of operations) {
-      await db.pending_queue.delete(operation.id);
+      if (operation.metadata.attempts > 5) {
+        await this.taskService.markOperationComplete(operation.id);
+      }
     }
   }
-  
-  // 启动实时订阅
-  private startRealtimeSubscription() {
-    const userId = supabase.auth.user()?.id;
+
+  private async startRealtimeSubscription() {
+    const user = await supabaseService.getCurrentUser();
+    const userId = user?.id;
     if (!userId) return;
-    
-    // 停止现有的订阅
+
     this.stopRealtimeSubscription();
-    
-    // 启动新的订阅
+
     this.realtimeSubscription = supabaseService.subscribeToTasks(userId, async (payload) => {
       await this.handleRealtimeUpdate(payload);
     });
-    
+
     console.log('实时订阅已启动');
   }
-  
-  // 停止实时订阅
+
   private stopRealtimeSubscription() {
     if (this.realtimeSubscription) {
       this.realtimeSubscription.unsubscribe();
@@ -264,20 +291,17 @@ export class LocalStorageService {
       console.log('实时订阅已停止');
     }
   }
-  
-  // 处理实时更新
-  private async handleRealtimeUpdate(payload: { eventType: string; new: Partial<Task>; old?: Partial<Task> }) {
+
+  private async handleRealtimeUpdate(payload: { eventType: string; new: Task; old?: Task }) {
     const { eventType, new: updatedTask } = payload;
-    
+
     console.log(`收到实时更新: ${eventType} - ${updatedTask.id}`);
-    
+
     try {
-      // 检查任务是否已存在于本地数据库
       const existingTask = await this.taskService.getTaskById(updatedTask.id);
-      
+
       switch (eventType) {
         case 'INSERT':
-          // 如果任务不存在于本地，添加它
           if (!existingTask) {
             await this.taskService.createTask({
               user_id: updatedTask.user_id,
@@ -288,6 +312,7 @@ export class LocalStorageService {
               tags: updatedTask.tags,
               project_id: updatedTask.project_id,
               parent_id: updatedTask.parent_id,
+              sort_order: updatedTask.sort_order,
               due_date: updatedTask.due_date,
               due_time: updatedTask.due_time,
               reminder_at: updatedTask.reminder_at,
@@ -295,18 +320,13 @@ export class LocalStorageService {
           }
           break;
         case 'UPDATE':
-          // 检查是否存在冲突
-          if (existingTask) {
-            // 检测冲突
+          if (existingTask && updatedTask.id) {
             const isConflict = this.detectConflict(existingTask, updatedTask);
-            
+
             if (isConflict) {
               console.log('检测到冲突，正在解决...');
-              
-              // 解决冲突
               const resolvedTask = this.resolveConflict(existingTask, updatedTask);
-              
-              // 更新本地任务
+
               await this.taskService.updateTask(updatedTask.id, {
                 title: resolvedTask.title,
                 description: resolvedTask.description,
@@ -324,7 +344,6 @@ export class LocalStorageService {
                 sync_status: 'synced',
               });
             } else {
-              // 无冲突，直接更新
               await this.taskService.updateTask(updatedTask.id, {
                 title: updatedTask.title,
                 description: updatedTask.description,
@@ -344,8 +363,7 @@ export class LocalStorageService {
           }
           break;
         case 'DELETE':
-          // 标记任务为已删除
-          if (existingTask) {
+          if (existingTask && updatedTask.id) {
             await this.taskService.deleteTask(updatedTask.id);
           }
           break;
@@ -354,66 +372,136 @@ export class LocalStorageService {
       console.error('处理实时更新失败:', error);
     }
   }
-  
-  // 检测冲突
-  private detectConflict(localTask: Partial<Task>, remoteTask: Partial<Task>): boolean {
-    // 检查时间戳
+
+  private detectConflict(localTask: Task, remoteTask: Task): boolean {
     if (localTask.updated_at !== remoteTask.updated_at) {
       return true;
     }
-    
-    // 检查 Vector Clock
+
     const localKeys = Object.keys(localTask.vector_clock || {});
     const remoteKeys = Object.keys(remoteTask.vector_clock || {});
-    
+
     if (localKeys.length !== remoteKeys.length) {
       return true;
     }
-    
+
     for (const key of localKeys) {
       if (localTask.vector_clock?.[key] !== remoteTask.vector_clock?.[key]) {
         return true;
       }
     }
-    
+
     return false;
   }
-  
-  // 解决冲突（LWW + Vector Clock）
-  private resolveConflict(localTask: Partial<Task>, remoteTask: Partial<Task>): Partial<Task> {
-    // 首先比较时间戳（LWW）
+
+  private resolveConflict(localTask: Task, remoteTask: Task): Task {
     if (new Date(localTask.updated_at || '') > new Date(remoteTask.updated_at || '')) {
       return localTask;
     } else if (new Date(localTask.updated_at || '') < new Date(remoteTask.updated_at || '')) {
       return remoteTask;
     } else {
-      // 时间戳相同，比较 Vector Clock
       const localClock = localTask.vector_clock || {};
       const remoteClock = remoteTask.vector_clock || {};
-      
-      // 计算 Vector Clock 的总和
-      const localSum = Object.values(localClock).reduce((sum, value) => sum + value, 0);
-      const remoteSum = Object.values(remoteClock).reduce((sum, value) => sum + value, 0);
-      
+
+      const localSum = Object.values(localClock).reduce((sum: number, value: unknown) => sum + (Number(value) || 0), 0);
+      const remoteSum = Object.values(remoteClock).reduce((sum: number, value: unknown) => sum + (Number(value) || 0), 0);
+
       if (localSum > remoteSum) {
         return localTask;
       } else if (localSum < remoteSum) {
         return remoteTask;
       } else {
-        // 总和相同，比较节点 ID（字典序）
         const localNodeId = Object.keys(localClock)[0] || '';
         const remoteNodeId = Object.keys(remoteClock)[0] || '';
-        
+
         return localNodeId > remoteNodeId ? localTask : remoteTask;
       }
     }
   }
-  
-  // 重新启动实时订阅（例如，当用户登录后）
-  restartRealtimeSubscription() {
-    this.startRealtimeSubscription();
+
+  async restartRealtimeSubscription() {
+    console.log('重新启动实时订阅...');
+    this.stopRealtimeSubscription();
+    await this.startRealtimeSubscription();
+  }
+
+  async initializeAndSync(userId: string) {
+    console.log("开始初始化同步...");
+
+    try {
+      console.log("从 Supabase 加载任务...");
+      const { data: remoteTasks, error: fetchError } = await supabaseService.getTasks(userId);
+
+      if (fetchError) {
+        console.error("从 Supabase 获取任务失败:", fetchError);
+        throw fetchError;
+      }
+
+      console.log("从服务器获取到的任务数量:", remoteTasks?.length || 0);
+
+      const pendingOperations = await this.taskService.getPendingOperations();
+      console.log("本地待同步操作数量:", pendingOperations.length);
+
+      if (remoteTasks && remoteTasks.length > 0) {
+        for (const remoteTask of remoteTasks) {
+          const existingTask = await this.taskService.getTaskById(remoteTask.id);
+
+          if (!existingTask) {
+            console.log("添加服务器任务到本地:", remoteTask.id);
+            await this.taskService.createTask({
+              user_id: remoteTask.user_id,
+              title: remoteTask.title,
+              description: remoteTask.description,
+              priority: remoteTask.priority,
+              status: remoteTask.status,
+              tags: remoteTask.tags || [],
+              project_id: remoteTask.project_id,
+              parent_id: remoteTask.parent_id,
+              sort_order: remoteTask.sort_order ?? 0,
+              due_date: remoteTask.due_date,
+              due_time: remoteTask.due_time,
+              reminder_at: remoteTask.reminder_at,
+            });
+
+            await this.taskService.updateTask(remoteTask.id, { sync_status: "synced" });
+          } else {
+            const localTime = new Date(existingTask.updated_at || 0).getTime();
+            const remoteTime = new Date(remoteTask.updated_at || 0).getTime();
+
+            if (remoteTime > localTime) {
+              console.log("更新本地任务（服务器更新）:", remoteTask.id);
+              await this.taskService.updateTask(remoteTask.id, {
+                title: remoteTask.title,
+                description: remoteTask.description,
+                priority: remoteTask.priority,
+                status: remoteTask.status,
+                tags: remoteTask.tags,
+                project_id: remoteTask.project_id,
+                parent_id: remoteTask.parent_id,
+                due_date: remoteTask.due_date,
+                due_time: remoteTask.due_time,
+                reminder_at: remoteTask.reminder_at,
+                is_deleted: remoteTask.is_deleted,
+                deleted_at: remoteTask.deleted_at,
+                sync_status: "synced",
+              });
+            }
+          }
+        }
+      }
+
+      if (pendingOperations.length > 0) {
+        console.log("开始同步本地待处理操作...");
+        await this.syncPendingOperations(userId);
+      }
+
+      console.log("初始化同步完成");
+
+    } catch (error) {
+      console.error("初始化同步失败:", error);
+      throw error;
+    }
   }
 }
 
-// 导出单例实例
 export const localStorageService = new LocalStorageService();

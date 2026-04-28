@@ -1,6 +1,5 @@
-import Dexie from 'dexie';
+import Dexie, { type Table } from 'dexie';
 
-// 任务类型定义
 export interface Task {
   id: string;
   user_id: string;
@@ -25,7 +24,6 @@ export interface Task {
   sync_status?: 'synced' | 'pending' | 'conflict';
 }
 
-// 待同步操作队列
 export interface PendingOperation {
   id: string;
   type: 'CREATE' | 'UPDATE' | 'DELETE';
@@ -38,7 +36,6 @@ export interface PendingOperation {
   };
 }
 
-// 同步状态
 export interface SyncState {
   user_id: string;
   last_sync_at: string;
@@ -47,7 +44,6 @@ export interface SyncState {
   last_error?: string;
 }
 
-// 附件缓存
 export interface AttachmentBlob {
   id: string;
   task_id: string;
@@ -57,16 +53,15 @@ export interface AttachmentBlob {
   created_at: string;
 }
 
-// 数据库类
-export class TodoDatabase extends Dexie {
-  tasks!: Dexie.Table<Task, 'id'>;
-  pending_queue!: Dexie.Table<PendingOperation, 'id'>;
-  sync_state!: Dexie.Table<SyncState, 'user_id'>;
-  blobs!: Dexie.Table<AttachmentBlob, 'id'>;
+class TodoDatabase extends Dexie {
+  tasks!: Table<Task, string>;
+  pending_queue!: Table<PendingOperation, string>;
+  sync_state!: Table<SyncState, string>;
+  blobs!: Table<AttachmentBlob, string>;
 
   constructor() {
     super('TodoApp_v3');
-    
+
     this.version(1).stores({
       tasks: 'id, user_id, status, priority, updated_at, [user_id+status]',
       pending_queue: 'id, metadata.original_timestamp, metadata.attempts',
@@ -76,5 +71,4 @@ export class TodoDatabase extends Dexie {
   }
 }
 
-// 导出数据库实例
 export const db = new TodoDatabase();

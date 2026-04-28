@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { AuthLayout } from '../../components/ui/AuthLayout';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
   
   // 验证邮箱格式
@@ -31,7 +34,7 @@ const ForgotPassword: React.FC = () => {
     
     setLoading(true);
     setError('');
-    setSuccess('');
+    setSuccess(false);
     
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -41,7 +44,7 @@ const ForgotPassword: React.FC = () => {
       if (error) {
         setError(error.message);
       } else {
-        setSuccess('密码重置邮件已发送，请检查您的邮箱');
+        setSuccess(true);
         // 3秒后跳转到登录页面
         setTimeout(() => {
           navigate('/auth/login');
@@ -54,69 +57,97 @@ const ForgotPassword: React.FC = () => {
     }
   };
   
+  if (success) {
+    return (
+      <AuthLayout logoText="任务管理">
+        <div className="text-center py-8">
+          <div className="mb-6 flex justify-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-cyan-400 rounded-full flex items-center justify-center animate-pulse">
+              <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-bold text-white mb-2">检查您的邮箱</h2>
+          <p className="text-sm text-white/70 mb-4">
+            我们已发送密码重置链接到 <span className="font-semibold">{email}</span>
+          </p>
+
+          <p className="text-xs text-white/60 mb-6">
+            请按照邮件中的链接重置您的密码。该链接将在 24 小时后过期。
+          </p>
+
+          <a href="/auth/login" className="text-sm font-semibold text-cyan-400 hover:text-cyan-300 transition-colors">
+            返回登录
+          </a>
+        </div>
+      </AuthLayout>
+    );
+  }
+  
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">忘记密码</h1>
-        
-        {/* 错误提示 */}
+    <AuthLayout logoText="任务管理">
+      <div>
+        <div className="flex items-center mb-6">
+          <button
+            onClick={() => navigate(-1)}
+            className="mr-4 text-white/70 hover:text-white transition-colors"
+            aria-label="返回"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-2">重置密码</h2>
+            <p className="text-sm text-white/70">输入您的邮箱以接收重置链接</p>
+          </div>
+        </div>
+
         {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
-            {error}
+          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <p className="text-sm text-red-300">{error}</p>
           </div>
         )}
-        
-        {/* 成功提示 */}
-        {success && (
-          <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
-            {success}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit}>
-          <div className="mb-6">
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">邮箱</label>
-            <input
-              type="email"
-              id="email"
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (error) {
-                  setError('');
-                }
-              }}
-              required
-            />
-          </div>
-          
-          <div className="mt-6">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  发送中...
-                </>
-              ) : '发送重置链接'}
-            </button>
-          </div>
-          
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              想起密码了？ <a href="/auth/login" className="font-medium text-indigo-600 hover:text-indigo-500">返回登录</a>
-            </p>
-          </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <Input
+            label="邮箱地址"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (error) {
+                setError('');
+              }
+            }}
+            error={error}
+            required
+          />
+
+          <Button
+            type="submit"
+            variant="primary"
+            fullWidth
+            loading={loading}
+          >
+            发送重置链接
+          </Button>
         </form>
+
+        <p className="mt-6 text-center text-sm text-white/70">
+          想起密码了？{' '}
+          <a
+            href="/auth/login"
+            className="font-semibold text-cyan-400 hover:text-cyan-300 transition-colors"
+          >
+            返回登录
+          </a>
+        </p>
       </div>
-    </div>
+    </AuthLayout>
   );
 };
 

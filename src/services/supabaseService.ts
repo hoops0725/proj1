@@ -1,33 +1,24 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import type { Task } from '../lib/db';
 
-// 创建 Supabase 客户端
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// Supabase 服务类
 export class SupabaseService {
-  // 认证相关
   async signUp(email: string, password: string) {
     return supabase.auth.signUp({ email, password });
   }
-  
+
   async signIn(email: string, password: string) {
     return supabase.auth.signInWithPassword({ email, password });
   }
-  
+
   async signOut() {
     return supabase.auth.signOut();
   }
-  
+
   async getCurrentUser() {
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   }
-  
-  // 任务相关
+
   async createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'vector_clock' | 'checksum' | 'is_deleted' | 'sync_status'>) {
     return supabase
       .from('tasks')
@@ -35,7 +26,7 @@ export class SupabaseService {
       .select()
       .single();
   }
-  
+
   async updateTask(id: string, updates: Partial<Task>) {
     return supabase
       .from('tasks')
@@ -44,7 +35,7 @@ export class SupabaseService {
       .select()
       .single();
   }
-  
+
   async deleteTask(id: string) {
     return supabase
       .from('tasks')
@@ -53,7 +44,7 @@ export class SupabaseService {
       .select()
       .single();
   }
-  
+
   async getTasks(userId: string) {
     return supabase
       .from('tasks')
@@ -62,18 +53,30 @@ export class SupabaseService {
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
   }
-  
-  // 实时订阅
+
   subscribeToTasks(userId: string, callback: (payload: { eventType: string; new: Task; old?: Task }) => void) {
-    return supabase
-      .channel(`user-${userId}`)
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
-        callback
+    const channelName = `user-${userId}`;
+    
+    // 先检查是否已经存在同名的 channel，如果存在则先取消订阅
+    const existingChannel = supabase.channel(channelName);
+    existingChannel.unsubscribe();
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes' as never,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => callback(payload as unknown as { eventType: string; new: Task; old?: Task })
       )
       .subscribe();
+
+    return channel;
   }
 }
 
-// 导出服务实例
 export const supabaseService = new SupabaseService();

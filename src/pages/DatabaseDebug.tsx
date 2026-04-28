@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../lib/db';
 import type { Task, PendingOperation, SyncState } from '../lib/db';
 import { localStorageService } from '../services/localStorageService';
 
 const DatabaseDebug: React.FC = () => {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
   const [syncState, setSyncState] = useState<SyncState | undefined>();
@@ -68,169 +70,202 @@ const DatabaseDebug: React.FC = () => {
     loadData();
   };
 
-  // 清空数据库
+  // 清空数据库（已禁用，出于安全考虑）
   const handleClearDatabase = async () => {
-    if (window.confirm('确定要清空数据库吗？此操作不可恢复！')) {
-      await db.tasks.clear();
-      await db.pending_queue.clear();
-      await db.sync_state.clear();
-      await db.blobs.clear();
-      loadData();
-    }
+    console.warn('清空数据库功能已禁用');
+    alert('此功能已出于安全考虑被禁用');
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">数据库调试工具</h1>
-        
-        {loading && (
-          <div className="mb-6 p-4 rounded-md bg-yellow-100 text-yellow-800">
-            <div className="flex items-center">
-              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-yellow-500 mr-2"></div>
-              <span>加载中...</span>
+    <div className="relative min-h-screen overflow-hidden">
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-cyan-900 -z-20" />
+      <div
+        className="fixed inset-0 opacity-40 -z-10"
+        style={{
+          background: 'radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 50%)',
+        }}
+      />
+
+      <div className="relative min-h-screen">
+        <header className="bg-white/10 backdrop-blur-md border-b border-white/20 shadow-lg">
+          <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <button
+                  onClick={() => navigate(-1)}
+                  className="mr-4 text-white/70 hover:text-white transition-colors"
+                  aria-label="返回"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <h1 className="text-2xl font-bold text-white">数据库调试工具</h1>
+              </div>
+              <button
+                onClick={() => navigate('/app')}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-lg hover:from-blue-700 hover:to-cyan-600 transition-all duration-200 shadow-md hover:shadow-lg font-medium"
+              >
+                返回应用
+              </button>
             </div>
           </div>
-        )}
+        </header>
 
-        {/* 网络状态 */}
-        <div className="mb-6 p-4 rounded-md bg-white shadow">
-          <h2 className="text-lg font-semibold mb-2">网络状态</h2>
-          <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-            networkStatus ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-          }`}>
-            {networkStatus ? '在线' : '离线'}
+        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          {loading && (
+            <div className="mb-6 p-4 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-yellow-400 mr-2"></div>
+                <span>加载中...</span>
+              </div>
+            </div>
+          )}
+
+          {/* 网络状态 */}
+          <div className="mb-6 p-6 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20">
+            <h2 className="text-xl font-semibold text-white mb-4">网络状态</h2>
+            <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
+              networkStatus ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'
+            }`}>
+              <span className={`w-2 h-2 rounded-full mr-2 ${
+                networkStatus ? 'bg-green-400' : 'bg-red-400'
+              }`} />
+              {networkStatus ? '在线' : '离线'}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                onClick={handleSync}
+                disabled={!networkStatus}
+                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-lg hover:from-blue-700 hover:to-cyan-600 transition-all duration-200 shadow-md hover:shadow-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                手动同步
+              </button>
+              <button
+                onClick={handleCleanup}
+                className="px-5 py-2.5 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-all duration-200 border border-white/20 font-medium"
+              >
+                清理过期数据
+              </button>
+              <button
+                onClick={handleClearDatabase}
+                className="px-5 py-2.5 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-all duration-200 border border-red-500/30 font-medium"
+              >
+                清空数据库
+              </button>
+            </div>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={!networkStatus}
-            className="ml-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            手动同步
-          </button>
-          <button
-            onClick={handleCleanup}
-            className="ml-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-          >
-            清理过期数据
-          </button>
-          <button
-            onClick={handleClearDatabase}
-            className="ml-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-          >
-            清空数据库
-          </button>
-        </div>
 
-        {/* 同步状态 */}
-        <div className="mb-6 p-4 rounded-md bg-white shadow">
-          <h2 className="text-lg font-semibold mb-2">同步状态</h2>
-          {syncState ? (
-            <div className="space-y-2">
-              <div><strong>最后同步时间:</strong> {new Date(syncState.last_sync_at).toLocaleString()}</div>
-              <div><strong>是否正在同步:</strong> {syncState.sync_in_progress ? '是' : '否'}</div>
-              {syncState.last_error && (
-                <div className="text-red-600"><strong>上次同步错误:</strong> {syncState.last_error}</div>
-              )}
-              {syncState.cursor && (
-                <div><strong>同步游标:</strong> {syncState.cursor}</div>
-              )}
-            </div>
-          ) : (
-            <div className="text-gray-500">无同步状态数据</div>
-          )}
-        </div>
+          {/* 同步状态 */}
+          <div className="mb-6 p-6 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20">
+            <h2 className="text-xl font-semibold text-white mb-4">同步状态</h2>
+            {syncState ? (
+              <div className="space-y-3">
+                <div className="text-cyan-300"><strong>最后同步时间:</strong> {new Date(syncState.last_sync_at).toLocaleString()}</div>
+                <div className="text-cyan-300"><strong>是否正在同步:</strong> {syncState.sync_in_progress ? '是' : '否'}</div>
+                {syncState.last_error && (
+                  <div className="text-red-400"><strong>上次同步错误:</strong> {syncState.last_error}</div>
+                )}
+                {syncState.cursor && (
+                  <div className="text-cyan-300"><strong>同步游标:</strong> {syncState.cursor}</div>
+                )}
+              </div>
+            ) : (
+              <div className="text-white/60">无同步状态数据</div>
+            )}
+          </div>
 
-        {/* 待同步操作 */}
-        <div className="mb-6 p-4 rounded-md bg-white shadow">
-          <h2 className="text-lg font-semibold mb-2">待同步操作 ({pendingOperations.length})</h2>
-          {pendingOperations.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">类型</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">任务 ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">尝试次数</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {pendingOperations.map((op) => (
-                    <tr key={op.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{op.id.substring(0, 8)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{op.type}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{op.payload.id?.substring(0, 8)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{op.metadata.attempts}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(op.metadata.original_timestamp).toLocaleString()}
-                      </td>
+          {/* 待同步操作 */}
+          <div className="mb-6 p-6 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20">
+            <h2 className="text-xl font-semibold text-white mb-4">待同步操作 ({pendingOperations.length})</h2>
+            {pendingOperations.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-white/10">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">ID</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">类型</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">任务 ID</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">尝试次数</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">时间</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-gray-500">无待同步操作</div>
-          )}
-        </div>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {pendingOperations.map((op) => (
+                      <tr key={op.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{op.id.substring(0, 8)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-300">{op.type}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{op.payload.id?.substring(0, 8)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{op.metadata.attempts}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                          {new Date(op.metadata.original_timestamp).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-white/60">无待同步操作</div>
+            )}
+          </div>
 
-        {/* 任务列表 */}
-        <div className="p-4 rounded-md bg-white shadow">
-          <h2 className="text-lg font-semibold mb-2">任务列表 ({tasks.length})</h2>
-          {tasks.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">标题</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">优先级</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">同步状态</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {tasks.map((task) => (
-                    <tr key={task.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{task.id.substring(0, 8)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{task.title}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{task.status}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{task.priority}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          task.sync_status === 'synced' ? 'bg-green-100 text-green-800' :
-                          task.sync_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          task.sync_status === 'conflict' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {task.sync_status || '未同步'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(task.created_at).toLocaleString()}
-                      </td>
+          {/* 任务列表 */}
+          <div className="mb-6 p-6 bg-white/10 backdrop-blur-md rounded-xl shadow-lg border border-white/20">
+            <h2 className="text-xl font-semibold text-white mb-4">任务列表 ({tasks.length})</h2>
+            {tasks.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-white/10">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">ID</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">标题</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">状态</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">优先级</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">同步状态</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-cyan-300 uppercase tracking-wider">创建时间</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-gray-500">无任务数据</div>
-          )}
-        </div>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {tasks.map((task) => (
+                      <tr key={task.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{task.id.substring(0, 8)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{task.title}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-300">{task.status}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{task.priority}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
+                            task.sync_status === 'synced' ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
+                            task.sync_status === 'pending' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
+                            task.sync_status === 'conflict' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                            'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                          }`}>
+                            {task.sync_status || '未同步'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                          {new Date(task.created_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-white/60">无任务数据</div>
+            )}
+          </div>
 
-        {/* 刷新按钮 */}
-        <div className="mt-6">
-          <button
-            onClick={loadData}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            刷新数据
-          </button>
-        </div>
+          {/* 刷新按钮 */}
+          <div className="mt-6">
+            <button
+              onClick={loadData}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-xl hover:from-blue-700 hover:to-cyan-600 transition-all duration-200 shadow-lg hover:shadow-xl font-medium"
+            >
+              刷新数据
+            </button>
+          </div>
+        </main>
       </div>
     </div>
   );

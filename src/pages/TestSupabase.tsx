@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 const TestSupabase: React.FC = () => {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<string>('正在测试...');
   const [details, setDetails] = useState<string[]>([]);
 
@@ -49,25 +51,55 @@ const TestSupabase: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">Supabase 配置测试</h1>
+    <div className="relative min-h-screen overflow-hidden flex items-center justify-center">
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-cyan-900 -z-20" />
+      <div
+        className="fixed inset-0 opacity-40 -z-10"
+        style={{
+          background: 'radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 50%)',
+        }}
+      />
+      
+      <div className="bg-white/10 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 p-8 w-full max-w-md">
+        <div className="flex items-center mb-6">
+          <button
+            onClick={() => navigate(-1)}
+            className="mr-4 text-white/70 hover:text-white transition-colors"
+            aria-label="返回"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-2xl font-bold text-white">Supabase 配置测试</h1>
+        </div>
         
-        <div className={`p-4 rounded-md mb-4 ${status === '配置正确' ? 'bg-green-100 text-green-700' : status === '正在测试...' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+        <div className={`p-4 rounded-lg mb-4 ${status === '配置正确' ? 'bg-green-500/20 text-green-300 border border-green-500/30' : status === '正在测试...' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'}`}>
           状态: {status}
         </div>
         
-        <div className="bg-gray-50 p-4 rounded-md">
-          <h2 className="font-semibold mb-2">详细信息:</h2>
+        <div className="bg-white/5 border border-white/10 p-4 rounded-lg">
+          <h2 className="font-semibold text-white mb-2">详细信息:</h2>
           <ul className="space-y-1">
             {details.map((detail, index) => (
-              <li key={index} className="text-sm text-gray-600">{detail}</li>
+              <li key={index} className="text-sm text-cyan-300/80">{detail}</li>
             ))}
           </ul>
         </div>
         
-        <div className="mt-6 text-center">
-          <a href="/auth/login" className="text-indigo-600 hover:text-indigo-500">返回登录页面</a>
+        <div className="mt-6 flex justify-center space-x-4">
+          <button
+            onClick={() => navigate('/auth/login')}
+            className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors border border-white/20"
+          >
+            登录页面
+          </button>
+          <button
+            onClick={() => navigate('/')}
+            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-lg hover:from-blue-700 hover:to-cyan-600 transition-all"
+          >
+            首页
+          </button>
         </div>
       </div>
     </div>
