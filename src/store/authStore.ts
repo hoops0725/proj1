@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import { localStorageService } from '../services/localStorageService';
 import { handleAuthError, handleSignUpError } from '../lib/errorHandler';
 
 // 条件导入 supabaseAdmin，避免测试环境中 import.meta.env 的问题
 let supabaseAdmin = supabase;
-try {
-  const adminModule = require('../lib/supabaseAdmin');
-  supabaseAdmin = adminModule.supabaseAdmin || supabase;
-} catch (e) {
-  console.log('supabaseAdmin not available, using regular supabase');
-}
+const loadSupabaseAdmin = async () => {
+  try {
+    const adminModule = await import('../lib/supabaseAdmin');
+    supabaseAdmin = adminModule.supabaseAdmin || supabase;
+  } catch (e) {
+    console.log('supabaseAdmin not available, using regular supabase');
+  }
+};
+loadSupabaseAdmin();
 
 interface User {
   id: string;
